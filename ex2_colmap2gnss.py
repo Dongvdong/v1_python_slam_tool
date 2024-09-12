@@ -3,11 +3,23 @@ import src.API_2Gps22ENU as API_2Gps22ENU
 import src.API_33DTo3D as API_33DTo3D
 import src.API_4DrawPic as API_4DrawPic
 
+
+
 import cv2
 import argparse
 
 # pip install pyyaml
 import yaml
+
+
+def API_Save2txt(txt_name,Gnss_list):
+
+    with open(txt_name, 'w') as file:
+        for row in Gnss_list:
+            line = ' '.join(map(str, row))
+            file.write(f"{line}\n")
+
+    print(txt_name,"保存成功")
 
 
 def quaternion_conjugate(qvec):
@@ -92,7 +104,7 @@ def read_colmapPose_imageText(path):
     return dict_video_colmap_xyz
 
 
-def Read_gnss_int(gps_config_yaml):
+def Read_gnss_ref_from_yaml(gps_config_yaml):
     init_lat=0
     init_lon=0
     init_h=0
@@ -207,7 +219,7 @@ if __name__ == "__main__":
 
     # ========= 1-2-1 读入gnss ned坐标系原点
     # 读取 YAML 文件
-    init_gnss=Read_gnss_int(gps_ned_ori)
+    init_gnss=Read_gnss_ref_from_yaml(gps_ned_ori)
 
     # ========= 1-2-2 解析 gnss 位姿结果
     GNSS_ENU_LIST,GNSS_LIST = read_gnssPose_Text(video_gps_txt,init_gnss)
@@ -215,12 +227,13 @@ if __name__ == "__main__":
     # ========= 2-1 按时间戳(str)匹配GNSS和colmap数据
     points_src_colmap=[]
     points_dst_gnss=[]
-
+    points_id_timeshap=[]
     for gnss_time_stamp in GNSS_ENU_LIST.keys():
         #print("gnss-enu",GNSS_ENU_LIST[gnss_time_stamp],"",dict_video_colmap_xyz[gnss_time_stamp])
         if COLMAP_ENU_LIST.get(gnss_time_stamp):
             points_src_colmap.append(COLMAP_ENU_LIST[gnss_time_stamp])
             points_dst_gnss.append(GNSS_ENU_LIST[gnss_time_stamp])
+            points_id_timeshap.append(gnss_time_stamp)
            
     gps_ned_np = np.array(points_src_colmap)
     colmap_ned_np = np.array(points_dst_gnss)
@@ -283,13 +296,39 @@ if __name__ == "__main__":
     draw_tracelist.append(points_dst_gnss)
     API_4DrawPic.Draw3D_trace_more(draw_tracelist)
 
+    gnss_enu =[]
+    colmapenu_in_gnssenu_tenu=[]
+    for i in range(0,len(points_id_timeshap)):
+        timeshap= points_id_timeshap[i]
+        #保存数据 名字 e n u
+        li=[timeshap,colmapenu_in_gnssenu_xyz[i][0],colmapenu_in_gnssenu_xyz[i][1],colmapenu_in_gnssenu_xyz[i][2]]
+        colmapenu_in_gnssenu_tenu.append(li)
 
-    #colmapenu_in_gnssenu_4=[]
-    # for i in range(0,len(colmapenu_in_gnssenu_xyz)):
-    #     name=colmapenu_in_gnssenu_3[i][0]
-    #     #保存数据 名字 e n u
-    #     li=[name,colmapenu_in_gnssenu_xyz[i][0],colmapenu_in_gnssenu_3[i][1],colmapenu_in_gnssenu_3[i][2]]
-    #     colmapenu_in_gnssenu_4.append(li)
-    # # 保存数据
-    # colmapeEnu_from_GnssEnu_txt_name="data/test/3colmapeEnu_from_GnssEnu.txt"
-    # API_Save2txt(colmapeEnu_from_GnssEnu_txt_name,colmapenu_in_gnssenu_4)
+        gi=[timeshap,points_dst_gnss[i][0],points_dst_gnss[i][1],points_dst_gnss[i][2]]
+        gnss_enu.append(gi)
+
+    # 保存数据
+
+    #colmape_selfEnu_txt_name
+    colmape_GnssEnu_txt_name="1_colmape_GnssEnu.txt"
+    API_Save2txt(colmape_GnssEnu_txt_name,colmapenu_in_gnssenu_tenu)    
+    
+    Gnss_enu_txt_name="0_gnss_enu.txt"
+    API_Save2txt(Gnss_enu_txt_name,gnss_enu)
+
+
+
+    # 4 读取enu数据 转化到 gnss
+    # 4-1 获取gnss参考点 - 名字 纬 经 高
+
+    gnss_ref=init_gnss
+
+    print("参考GNSS位置",gnss_ref)
+    # 4-2 获取enu数据集 -名字 e n u
+    #enu_list_Read=API_read2txt(colmape_GnssEnu_txt_name)
+    enu_list_Read=colmapenu_in_gnssenu_tenu
+    # 4-3 ENU数据转化为gnss数据
+    GNSS_list_from_enu=API_2Gps22ENU.API_enu4_to_gnss4_list(enu_list_Read,gnss_ref)
+    # 4-2 保存gnss结果 名字 纬 经 高
+    colmap_Gnss_txt_name="2_colmap_Gnss.txt"
+    API_Save2txt(colmap_Gnss_txt_name,GNSS_list_from_enu)
