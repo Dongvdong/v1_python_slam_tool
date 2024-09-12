@@ -1,7 +1,8 @@
 import numpy as np
-import src.API_2Gps22ENU as GNSS2ENU
-import src.API_33DTo3D as RansacICP
-import src.util as util
+import src.API_2Gps22ENU as API_2Gps22ENU
+import src.API_33DTo3D as API_33DTo3D
+import src.API_4DrawPic as API_4DrawPic
+
 import cv2
 import argparse
 
@@ -136,70 +137,43 @@ def read_gnssPose_Text(txt_name,init_gnss):
             alt=float(elems[3])
             gnss_in=[lat,lon,alt]
             GNSS_LIST[time_stamp]=gnss_in
-            #print("===",gnss_in)
 
-            # 参考点的经纬度和高度（参考点的坐标）
-            #init_gnss=GNSS2ENU.Api_cgcs2000Towgs84(init_gnss)
-            #gnss_in=GNSS2ENU.Api_cgcs2000Towgs84(gnss_in)
+
 
             ref_lat=init_gnss[0]
             ref_lon=init_gnss[1]
             ref_height=init_gnss[2]
 
-            #e, n, u = GNSS2ENU.API_gnss_to_enu(gnss_in,init_gnss)
+            e, n, u = API_2Gps22ENU.API_gnss_to_enu(gnss_in,init_gnss)
             
-
-            e, n, u = util.GPS2NED(ref_lat, ref_lon, ref_height,
-                                    float(elems[1]), float(elems[2]), float(elems[3]))
             
-            #print("误差",e1-e,n1-n,u1-u)
+            # from geographiclib.geodesic import Geodesic
+            # import math
 
-            '''
-            from geographiclib.geodesic import Geodesic
-            import math
+            # # 创建 Geodesic 对象
+            # geod = Geodesic.WGS84
 
-            # 创建 Geodesic 对象
-            geod = Geodesic.WGS84
+            # # 要转换的点的经纬度和高度
+            # point_lat = lat
+            # point_lon = lon
+            # point_height = alt
 
-            # 要转换的点的经纬度和高度
-            point_lat = lat
-            point_lon = lon
-            point_height = alt
+            # # 计算参考点和目标点之间的 ENU 坐标
+            # result = geod.Inverse(ref_lat, ref_lon, point_lat, point_lon)
 
-            # 计算参考点和目标点之间的 ENU 坐标
-            result = geod.Inverse(ref_lat, ref_lon, point_lat, point_lon)
-
-            # 计算水平距离和方位角
-            distance = result['s12']
-            azimuth = result['azi1']
-
-            # 计算 ENU 坐标
-            # 方位角是从北方向东的角度，需要转换为从东向北的角度（ENU坐标系）
-            azimuth_enu = (azimuth + 90) % 360
-
-            # 使用距离和方位角计算 ENU 坐标
-            e = distance * math.sin(math.radians(azimuth_enu))
-            n = distance * math.cos(math.radians(azimuth_enu))
-            u = point_height - ref_height  # 上向坐标（高度差）
-            '''
-
-            # from pyproj import Proj, Transformer
-            # # 创建 WGS84 坐标系和 ENU 坐标系转换器
-            # transformer = Transformer.from_crs("epsg:4326", "epsg:4979", always_xy=True)
-            
-           
-
-            # # # 将参考点和目标点的经纬度高度转换为 ECEF 坐标
-            # ref_x, ref_y, ref_z = transformer.transform(ref_lon, ref_lat, ref_height)
-            # point_x, point_y, point_z = transformer.transform(lon, lat, alt)
+            # # 计算水平距离和方位角
+            # distance = result['s12']
+            # azimuth = result['azi1']
 
             # # 计算 ENU 坐标
-            # e = point_x - ref_x
-            # n = point_y - ref_y
-            # u = point_z - ref_z
+            # # 方位角是从北方向东的角度，需要转换为从东向北的角度（ENU坐标系）
+            # azimuth_enu = (azimuth + 90) % 360
 
-
-            #print("===", [ned_x,ned_y,ned_z])
+            # # 使用距离和方位角计算 ENU 坐标
+            # e = distance * math.sin(math.radians(azimuth_enu))
+            # n = distance * math.cos(math.radians(azimuth_enu))
+            # u = point_height - ref_height  # 上向坐标（高度差）
+            
             GNSS_ENU_LIST[time_stamp] = [e,n,u]
             
 
@@ -227,7 +201,9 @@ if __name__ == "__main__":
     colmap2gnss_SRt_xml = args.colmap2gnss_SRt_xml
 
     # ========= 1 - 1 解析 colamp 位姿结果
-    dict_video_colmap_xyz = read_colmapPose_imageText(colmap_res_txt)
+    COLMAP_ENU_LIST = read_colmapPose_imageText(colmap_res_txt)
+
+    
 
     # ========= 1-2-1 读入gnss ned坐标系原点
     # 读取 YAML 文件
@@ -242,17 +218,17 @@ if __name__ == "__main__":
 
     for gnss_time_stamp in GNSS_ENU_LIST.keys():
         #print("gnss-enu",GNSS_ENU_LIST[gnss_time_stamp],"",dict_video_colmap_xyz[gnss_time_stamp])
-        if dict_video_colmap_xyz.get(gnss_time_stamp):
-            points_src_colmap.append(dict_video_colmap_xyz[gnss_time_stamp])
+        if COLMAP_ENU_LIST.get(gnss_time_stamp):
+            points_src_colmap.append(COLMAP_ENU_LIST[gnss_time_stamp])
             points_dst_gnss.append(GNSS_ENU_LIST[gnss_time_stamp])
            
     gps_ned_np = np.array(points_src_colmap)
     colmap_ned_np = np.array(points_dst_gnss)
 
     # ========= 2-2 计算变换关系
-    #s, R, sR,t  = RansacICP.API_pose_estimation_3dTo3d_ransac(points_src_colmap, points_dst_gnss) # 
+    s, R, sR,t  = API_33DTo3D.API_pose_estimation_3dTo3d_ransac(points_src_colmap, points_dst_gnss) # 
     #
-    s, R, sR,t  = RansacICP.umeyama_alignment(gps_ned_np.T, colmap_ned_np.T) # 
+    #s, R, sR,t  = API_33DTo3D.umeyama_alignment(gps_ned_np.T, colmap_ned_np.T) # EVO自带的 
    
 
 
@@ -299,6 +275,21 @@ if __name__ == "__main__":
     print(T_homogeneous)
 
 
-    #=========== 4 点云变换过去
-    colmapenu_in_gnssenu_3 = RansacICP.API_src3D_sRt_dis3D_list(points_src_colmap, points_dst_gnss, sR, t)
+    #===========  4 保存计算结果 colmap enu变换到gnss enu坐标系下的新坐标
+    colmapenu_in_gnssenu_xyz = API_33DTo3D.API_src3D_sRt_dis3D_list(points_src_colmap, points_dst_gnss, sR, t)
     
+    draw_tracelist=[]
+    draw_tracelist.append(colmapenu_in_gnssenu_xyz)
+    draw_tracelist.append(points_dst_gnss)
+    API_4DrawPic.Draw3D_trace_more(draw_tracelist)
+
+
+    #colmapenu_in_gnssenu_4=[]
+    # for i in range(0,len(colmapenu_in_gnssenu_xyz)):
+    #     name=colmapenu_in_gnssenu_3[i][0]
+    #     #保存数据 名字 e n u
+    #     li=[name,colmapenu_in_gnssenu_xyz[i][0],colmapenu_in_gnssenu_3[i][1],colmapenu_in_gnssenu_3[i][2]]
+    #     colmapenu_in_gnssenu_4.append(li)
+    # # 保存数据
+    # colmapeEnu_from_GnssEnu_txt_name="data/test/3colmapeEnu_from_GnssEnu.txt"
+    # API_Save2txt(colmapeEnu_from_GnssEnu_txt_name,colmapenu_in_gnssenu_4)
